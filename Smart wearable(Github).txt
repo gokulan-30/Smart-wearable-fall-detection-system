@@ -1,0 +1,94 @@
+SMART WEARABLE FALL DETECTION SYSTEM
+-----------------------------------------------------------------------------------------------------
+#include <Wire.h>
+#include <MPU6050.h>
+#include <SoftwareSerial.h>
+
+MPU6050 mpu;
+SoftwareSerial gsm(7, 8); // RX, TX for GSM
+
+// Threshold values
+float lowerThreshold = 0.4;   // Free fall threshold (g)
+float upperThreshold = 2.5;   // Impact threshold (g)
+
+bool fallDetected = false;
+unsigned long fallTime = 0;
+
+void setup() {
+  Serial.begin(9600);
+  gsm.begin(9600);
+  
+  Wire.begin();
+  mpu.initialize();
+
+  if (!mpu.testConnection()) {
+    Serial.println("MPU6050 not connected!");
+    while (1);
+  }
+
+  Serial.println("System Ready...");
+}
+
+void loop() {
+
+  int16_t ax, ay, az;
+  mpu.getAcceleration(&ax, &ay, &az);
+
+  // Convert raw data to g-force
+  float Axf = ax / 16384.0;
+  float Ayf = ay / 16384.0;
+  float Azf = az / 16384.0;
+
+  float totalAcceleration = sqrt(Axf*Axf + Ayf*Ayf + Azf*Azf);
+
+  Serial.print("Acceleration: ");
+  Serial.println(totalAcceleration);
+
+  // Step 1: Detect Free Fall
+  if (totalAcceleration < lowerThreshold) {
+    Serial.println("Free fall detected...");
+    delay(500);
+
+    // Step 2: Detect Impact
+    mpu.getAcceleration(&ax, &ay, &az);
+    Axf = ax / 16384.0;
+    Ayf = ay / 16384.0;
+    Azf = az / 16384.0;
+
+    totalAcceleration = sqrt(Axf*Axf + Ayf*Ayf + Azf*Azf);
+
+    if (totalAcceleration > upperThreshold) {
+      Serial.println("Impact detected!");
+      fallDetected = true;
+      fallTime = millis();
+    }
+  }
+
+  // Step 3: Check Inactivity
+  if (fallDetected) {
+    if (millis() - fallTime > 5000) {  // 5 seconds inactivity
+      sendSMS();
+      fallDetected = false;
+    }
+  }
+
+  delay(500);
+}
+
+void sendSMS() {
+  Serial.println("Sending SMS...");
+
+  gsm.println("AT+CMGF=1");
+  delay(1000);
+
+  gsm.println("AT+CMGS=\"+91XXXXXXXXXX\"");  // Replace with phone number
+  delay(1000);
+
+  gsm.println("Fall detected! Immediate help needed.");
+  delay(100);
+
+  gsm.write(26); // CTRL+Z to send SMS
+  delay(3000);
+
+  Serial.println("SMS Sent!");
+}
